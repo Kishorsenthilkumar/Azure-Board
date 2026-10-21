@@ -1,8 +1,0 @@
-/* Add styles for the fake review warning */
-.fake-review-warning {
-    color: red;
-    font-weight: bold;
-    background-color: #ffe6e6; /* Light red background */
-    padding: 5px;
-    border-radius: 3px;
-} 
