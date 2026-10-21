@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"flag"
 	"log"
 	"net/http"
@@ -10,22 +10,11 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"workboard/internal/database"
 )
 
-func HealthHandler(w http.ResponseWriter, r *http.Request) {
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	res := map[string]string{
-		"status": "ok",
-	}
-
-	err := json.NewEncoder(w).Encode(res)
-	if err != nil {
-		log.Println("failed to encode response:", err)
-	}
-
+type application struct {
+	db *sql.DB
 }
 
 func main() {
@@ -33,14 +22,19 @@ func main() {
 	addr := flag.String("addr", ":8080", "HTTP server address")
 	flag.Parse()
 
-	router := http.NewServeMux()
+	db, err := database.Open()
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	log.Println("database connection established")
+
 	server := http.Server{
 		Addr:              *addr,
-		Handler:           router,
+		Handler:           router(&application{db: db}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-
-	router.HandleFunc("GET /healthz", HealthHandler)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
