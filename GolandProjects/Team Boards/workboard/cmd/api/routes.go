@@ -7,11 +7,21 @@ func router(app *application) *http.ServeMux {
 
 	router.HandleFunc("GET /healthz", app.HealthHandler)
 	router.HandleFunc("GET /readyz", app.DatabaseHealthHandler)
+
 	router.HandleFunc("POST /v1/projects", app.ProjectHandler)
 	router.HandleFunc("GET /v1/projects", app.ListProjectsHandler)
 	router.HandleFunc("GET /v1/projects/{id}", app.GetProjectHandler)
 	router.HandleFunc("PUT /v1/projects/{id}", app.UpdateProjectHandler)
 	router.HandleFunc("DELETE /v1/projects/{id}", app.DeleteProjectHandler)
+
+	router.HandleFunc("POST /v1/projects/{id}/work-items", app.CreateWorkItemHandler)
+	router.HandleFunc("GET /v1/projects/{id}/work-items", app.ListWorkItemsHandler)
+	router.HandleFunc("GET /v1/work-items/{id}", app.GetWorkItemHandler)
+	router.HandleFunc("PUT /v1/work-items/{id}", app.UpdateWorkItemHandler)
+	router.HandleFunc("DELETE /v1/work-items/{id}", app.DeleteWorkItemHandler)
+
+	router.HandleFunc("PATCH /v1/work-items/{id}/status", app.UpdateWorkItemStatusHandler)
+	router.HandleFunc("PATCH /v1/work-items/{id}/position", app.UpdateWorkItemPositionHandler)
 
 	return router
 }
