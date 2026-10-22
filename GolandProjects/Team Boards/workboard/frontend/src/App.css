@@ -1,0 +1,90 @@
+
+#root {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 32px;
+  font-family: Arial, sans-serif;
+}
+
+h1 {
+  margin-bottom: 24px;
+  color: #242424;
+}
+
+.work-item-card {
+  background-color: white;
+  border: 1px solid #d1d1d1;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.work-item-card h3 {
+  margin: 0 0 8px;
+  color: #0078d4;
+  font-size: 16px;
+}
+
+.work-item-card p {
+  margin: 0;
+  color: #616161;
+  font-size: 14px;
+}
+
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.board-column {
+  background: #f5f5f5;
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.board-column h2 {
+  font-size: 16px;
+  margin: 4px 0 16px;
+}
+
+
+.work-item-card {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.work-item-card button {
+  border: 1px solid #c5c5c5;
+  border-radius: 4px;
+  background: #ffffff;
+  padding: 6px 10px;
+  margin: 8px 6px 0 0;
+  cursor: pointer;
+}
+
+.work-item-card button:hover {
+  background: #e8f3ff;
+  border-color: #0078d4;
+}
+
+.board-column {
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 14px;
+  min-width: 0;
+}
+
+.board-column h2 {
+  font-size: 16px;
+  margin: 4px 0 16px;
+  color: #242424;
+}

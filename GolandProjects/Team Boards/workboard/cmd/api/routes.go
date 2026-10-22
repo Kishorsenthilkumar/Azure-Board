@@ -2,7 +2,7 @@ package main
 
 import "net/http"
 
-func router(app *application) *http.ServeMux {
+func router(app *application) http.Handler {
 	router := http.NewServeMux()
 
 	router.HandleFunc("GET /healthz", app.HealthHandler)
@@ -23,5 +23,5 @@ func router(app *application) *http.ServeMux {
 	router.HandleFunc("PATCH /v1/work-items/{id}/status", app.UpdateWorkItemStatusHandler)
 	router.HandleFunc("PATCH /v1/work-items/{id}/position", app.UpdateWorkItemPositionHandler)
 
-	return router
+	return app.enableCORS(router)
 }
