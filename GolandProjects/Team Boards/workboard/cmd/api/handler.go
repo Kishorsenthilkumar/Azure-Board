@@ -35,6 +35,13 @@ type workItem struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+type workItemDiscussion struct {
+	CommentID  int64     `json:"comment_id"`
+	WorkItemID int64     `json:"work_item_id"`
+	Content    string    `json:"content"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 func (app *application) HealthHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
@@ -409,32 +416,32 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	var estimatedHours sql.NullFloat64
 
 	query := `
-		INSERT INTO work_items (
-			project_id,
-			title,
-			description,
-			work_item_type,
-			task_type,
-			status,
-			estimated_hours,
-			sort_order
-		)
-		VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			COALESCE(
-				(
-					SELECT MAX(sort_order) + 1
-					FROM work_items
-					WHERE project_id = $1 AND status = $6
-				),
-				1
-			)
-		)
-		RETURNING
-			id, project_id, title, description,
-			work_item_type, task_type, status,
-			estimated_hours, sort_order, created_at, updated_at;
-	`
+    INSERT INTO work_items (
+        project_id,
+        title,
+        description,
+        work_item_type,
+        task_type,
+        status,
+        estimated_hours,
+        sort_order
+    )
+    VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        COALESCE(
+            (
+                SELECT MAX(sort_order) + 1
+                FROM work_items
+                WHERE project_id = $1 AND status = $8
+            ),
+            1
+        )
+    )
+    RETURNING
+        id, project_id, title, description,
+        work_item_type, task_type, status,
+        estimated_hours, sort_order, created_at, updated_at;
+`
 
 	args := []interface{}{
 		input.ProjectID,
@@ -444,6 +451,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		input.TaskType,
 		input.Status,
 		input.EstimatedHours,
+		input.Status,
 	}
 
 	err = tx.QueryRowContext(ctx, query, args...).Scan(
