@@ -1318,3 +1318,66 @@ func lockProject(ctx context.Context, tx *sql.Tx, projectID int64) error {
 	return err
 
 }
+
+func (app *application) CreateWorkItemComment(w http.ResponseWriter, r *http.Request) {
+	id, err := readIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid work-item ID", http.StatusBadRequest)
+		return
+	}
+
+	var input struct {
+		Content string `json:"content"`
+	}
+	var comment workItemDiscussion
+
+	err = json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	input.Content = strings.TrimSpace(input.Content)
+
+	if input.Content == "" {
+		http.Error(w, "comment cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var workItemID int64
+	err = app.db.QueryRowContext(ctx,
+		"SELECT id FROM work_items WHERE id = $1", id).Scan(&workItemID)
+
+	if err == sql.ErrNoRows {
+		http.Error(w, "workitem not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		log.Printf("database error %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	query := `INSERT INTO work_item_comments (work_item_id, content)
+            VALUES ($1, $2)
+            RETURNING id, work_item_id, content, created_at;`
+
+	err = app.db.QueryRowContext(ctx, query, workItemID, input.Content).Scan(&comment.CommentID, &comment.WorkItemID, &comment.Content, &comment.CreatedAt)
+	if err != nil {
+		log.Printf("database error :%v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	err = json.NewEncoder(w).Encode(comment)
+	if err != nil {
+		log.Printf("JSON encoding error: %v", err)
+		return
+	}
+}
