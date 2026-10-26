@@ -66,17 +66,7 @@ func (app *application) DatabaseHealthHandler(w http.ResponseWriter, r *http.Req
 	err := app.db.PingContext(ctx)
 	if err != nil {
 		log.Printf("database connection failed %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-
-		res := map[string]string{
-			"status": "service unavailable",
-		}
-
-		err = json.NewEncoder(w).Encode(res)
-		if err != nil {
-			log.Println("failed to encode response:", err)
-		}
+		clientError(w, http.StatusServiceUnavailable, "service unavailable")
 		return
 	}
 
@@ -104,13 +94,13 @@ func (app *application) ProjectHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" {
-		http.Error(w, "project name cannot be empty", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "project name cannot be empty")
 		return
 	}
 
@@ -128,8 +118,7 @@ func (app *application) ProjectHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = app.db.QueryRowContext(ctx, query, args...).Scan(&project.ID, &project.Name, &project.Description, &project.CreatedAt, &project.UpdatedAt)
 	if err != nil {
-		log.Printf("database error : %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -157,8 +146,7 @@ func (app *application) ListProjectsHandler(w http.ResponseWriter, r *http.Reque
 	rows, err := app.db.QueryContext(ctx, query)
 
 	if err != nil {
-		log.Printf("database error : %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -168,16 +156,14 @@ func (app *application) ListProjectsHandler(w http.ResponseWriter, r *http.Reque
 		var p project
 		err = rows.Scan(&p.ID, &p.Name, &p.Description, &p.CreatedAt, &p.UpdatedAt)
 		if err != nil {
-			log.Printf("database error : %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 		projects = append(projects, p)
 	}
 
 	if err = rows.Err(); err != nil {
-		log.Printf("database error : %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -195,7 +181,7 @@ func (app *application) GetProjectHandler(w http.ResponseWriter, r *http.Request
 
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid project ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid project ID")
 		return
 	}
 
@@ -215,8 +201,7 @@ func (app *application) GetProjectHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err != nil {
-		log.Printf("database error :%v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -235,7 +220,7 @@ func (app *application) UpdateProjectHandler(w http.ResponseWriter, r *http.Requ
 
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid project ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid project ID")
 		return
 	}
 
@@ -245,13 +230,13 @@ func (app *application) UpdateProjectHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" {
-		http.Error(w, "project name cannot be empty", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "project name cannot be empty")
 		return
 	}
 
@@ -284,13 +269,12 @@ func (app *application) UpdateProjectHandler(w http.ResponseWriter, r *http.Requ
 	)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "project not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "project not found")
 		return
 	}
 
 	if err != nil {
-		log.Printf("database error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -307,7 +291,7 @@ func (app *application) DeleteProjectHandler(w http.ResponseWriter, r *http.Requ
 
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid project ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid project ID")
 		return
 	}
 
@@ -321,13 +305,12 @@ func (app *application) DeleteProjectHandler(w http.ResponseWriter, r *http.Requ
 	err = app.db.QueryRowContext(ctx, query, id).Scan(&deletedID)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "project not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "project not found")
 		return
 	}
 
 	if err != nil {
-		log.Printf("database error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -337,7 +320,7 @@ func (app *application) DeleteProjectHandler(w http.ResponseWriter, r *http.Requ
 func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid project ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid project ID")
 		return
 	}
 
@@ -345,7 +328,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 
 	err = json.NewDecoder(r.Body).Decode(&input)
 	if err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
@@ -353,7 +336,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 
 	input.Title = strings.TrimSpace(input.Title)
 	if input.Title == "" {
-		http.Error(w, "project title cannot be empty", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "project title cannot be empty")
 		return
 	}
 
@@ -362,7 +345,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	if input.EstimatedHours != nil && *input.EstimatedHours < 0 {
-		http.Error(w, "estimated hours cannot be negative", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "estimated hours cannot be negative")
 		return
 	}
 
@@ -370,7 +353,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	case "Task", "Bug", "User Story":
 		// Valid work-item type.
 	default:
-		http.Error(w, "invalid work-item type", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid work-item type")
 		return
 	}
 
@@ -378,7 +361,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	case "Dev", "Prod", "Test":
 		// Valid task type.
 	default:
-		http.Error(w, "invalid task type", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid task type")
 		return
 	}
 
@@ -386,7 +369,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	case "New", "Active", "Resolved", "Closed":
 		// Valid status.
 	default:
-		http.Error(w, "invalid status", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid status")
 		return
 	}
 
@@ -395,8 +378,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 
 	tx, err := app.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("database transaction error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	defer tx.Rollback()
@@ -404,12 +386,11 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	// Lock the project before calculating the next position.
 	err = lockProject(ctx, tx, input.ProjectID)
 	if err == sql.ErrNoRows {
-		http.Error(w, "project not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "project not found")
 		return
 	}
 	if err != nil {
-		log.Printf("project lock error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -473,12 +454,11 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 
 		// Foreign-key violation.
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			http.Error(w, "project not found", http.StatusNotFound)
+			clientError(w, http.StatusNotFound, "project not found")
 			return
 		}
 
-		log.Printf("database error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -490,8 +470,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 
 	// Commit before returning a successful response.
 	if err := tx.Commit(); err != nil {
-		log.Printf("database commit error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -506,7 +485,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Request) {
 	projectID, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid project ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid project ID")
 		return
 	}
 
@@ -519,7 +498,7 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 		case "New", "Active", "Resolved", "Closed":
 			// Valid status
 		default:
-			http.Error(w, "invalid status", http.StatusBadRequest)
+			clientError(w, http.StatusBadRequest, "invalid status")
 			return
 		}
 	}
@@ -529,7 +508,7 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 		case "Task", "Bug", "User Story":
 			// Valid
 		default:
-			http.Error(w, "invalid work item type", http.StatusBadRequest)
+			clientError(w, http.StatusBadRequest, "invalid work item type")
 			return
 		}
 	}
@@ -539,7 +518,7 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 		case "Dev", "Prod", "Test":
 			// Valid
 		default:
-			http.Error(w, "invalid task type", http.StatusBadRequest)
+			clientError(w, http.StatusBadRequest, "invalid task type")
 			return
 		}
 	}
@@ -556,13 +535,12 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 	).Scan(&exists)
 
 	if err != nil {
-		log.Printf("database error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	if !exists {
-		http.Error(w, "project not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "project not found")
 		return
 	}
 
@@ -580,8 +558,7 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 
 	rows, err := app.db.QueryContext(ctx, query, projectID, status, workItemType, taskType)
 	if err != nil {
-		log.Printf("database error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	defer rows.Close()
@@ -606,8 +583,7 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 			&item.UpdatedAt,
 		)
 		if err != nil {
-			log.Printf("database error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 
@@ -619,8 +595,7 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := rows.Err(); err != nil {
-		log.Printf("database error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -635,7 +610,7 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 func (app *application) GetWorkItemHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid work item ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid work item ID")
 		return
 	}
 
@@ -668,13 +643,12 @@ func (app *application) GetWorkItemHandler(w http.ResponseWriter, r *http.Reques
 	)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "work item not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 
 	if err != nil {
-		log.Printf("database error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -693,7 +667,7 @@ func (app *application) GetWorkItemHandler(w http.ResponseWriter, r *http.Reques
 func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid work item ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid work item ID")
 		return
 	}
 
@@ -707,39 +681,39 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
 	input.Title = strings.TrimSpace(input.Title)
 	if input.Title == "" {
-		http.Error(w, "title cannot be empty", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "title cannot be empty")
 		return
 	}
 
 	switch input.WorkItemType {
 	case "Task", "Bug", "User Story":
 	default:
-		http.Error(w, "invalid work item type", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid work item type")
 		return
 	}
 
 	switch input.TaskType {
 	case "Dev", "Prod", "Test":
 	default:
-		http.Error(w, "invalid task type", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid task type")
 		return
 	}
 
 	switch input.Status {
 	case "New", "Active", "Resolved", "Closed":
 	default:
-		http.Error(w, "invalid status", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid status")
 		return
 	}
 
 	if input.EstimatedHours != nil && *input.EstimatedHours < 0 {
-		http.Error(w, "estimated hours cannot be negative", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "estimated hours cannot be negative")
 		return
 	}
 
@@ -748,8 +722,7 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 
 	tx, err := app.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("database transaction error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	defer tx.Rollback()
@@ -757,12 +730,11 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	// Check whether the work item exists and move it if its status changes.
 	err = moveWorkItemStatus(ctx, tx, id, input.Status)
 	if err == sql.ErrNoRows {
-		http.Error(w, "work item not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 	if err != nil {
-		log.Printf("status movement error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -780,8 +752,7 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		input.TaskType, input.EstimatedHours, id)
 
 	if err != nil {
-		log.Printf("work item update error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -809,12 +780,11 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "work item not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 	if err != nil {
-		log.Printf("work item fetch error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -823,8 +793,7 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("database commit error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -839,7 +808,7 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 func (app *application) DeleteWorkItemHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid work item ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid work item ID")
 		return
 	}
 
@@ -848,8 +817,7 @@ func (app *application) DeleteWorkItemHandler(w http.ResponseWriter, r *http.Req
 
 	tx, err := app.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("database transaction error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	defer tx.Rollback()
@@ -863,24 +831,22 @@ func (app *application) DeleteWorkItemHandler(w http.ResponseWriter, r *http.Req
 	`, id).Scan(&projectID)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "work item not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 	if err != nil {
-		log.Printf("database query error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	// Step 2: Lock the project first.
 	err = lockProject(ctx, tx, projectID)
 	if err == sql.ErrNoRows {
-		http.Error(w, "project not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "project not found")
 		return
 	}
 	if err != nil {
-		log.Printf("project lock error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -896,12 +862,11 @@ func (app *application) DeleteWorkItemHandler(w http.ResponseWriter, r *http.Req
 	`, id, projectID).Scan(&status, &oldOrder)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "work item not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 	if err != nil {
-		log.Printf("database query error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -912,8 +877,7 @@ func (app *application) DeleteWorkItemHandler(w http.ResponseWriter, r *http.Req
 	`, id)
 
 	if err != nil {
-		log.Printf("work item deletion error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -927,15 +891,13 @@ func (app *application) DeleteWorkItemHandler(w http.ResponseWriter, r *http.Req
 	`, projectID, status, oldOrder)
 
 	if err != nil {
-		log.Printf("sort order update error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	// Step 6: Commit both changes together.
 	if err := tx.Commit(); err != nil {
-		log.Printf("database commit error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -945,7 +907,7 @@ func (app *application) DeleteWorkItemHandler(w http.ResponseWriter, r *http.Req
 func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid work item ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid work item ID")
 		return
 	}
 
@@ -954,7 +916,7 @@ func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *ht
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
@@ -962,7 +924,7 @@ func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *ht
 	case "New", "Active", "Resolved", "Closed":
 		// Valid status
 	default:
-		http.Error(w, "invalid status", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid status")
 		return
 	}
 
@@ -971,8 +933,7 @@ func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *ht
 
 	tx, err := app.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("database transaction error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	defer tx.Rollback()
@@ -980,12 +941,11 @@ func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *ht
 	// Move the work item if its status has changed.
 	err = moveWorkItemStatus(ctx, tx, id, input.Status)
 	if err == sql.ErrNoRows {
-		http.Error(w, "work item not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 	if err != nil {
-		log.Printf("status movement error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1014,12 +974,11 @@ func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *ht
 	)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "work item not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 	if err != nil {
-		log.Printf("work item fetch error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1028,8 +987,7 @@ func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *ht
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("database commit error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1044,7 +1002,7 @@ func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *ht
 func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid work item ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid work item ID")
 		return
 	}
 
@@ -1053,12 +1011,12 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
 	if input.SortOrder < 1 {
-		http.Error(w, "sort_order must be at least 1", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "sort_order must be at least 1")
 		return
 	}
 
@@ -1067,8 +1025,7 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 
 	tx, err := app.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("database transaction error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	defer tx.Rollback()
@@ -1084,24 +1041,22 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 `, id).Scan(&projectID)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "work item not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 
 	if err != nil {
-		log.Printf("database query error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	err = lockProject(ctx, tx, projectID)
 	if err == sql.ErrNoRows {
-		http.Error(w, "project not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "project not found")
 		return
 	}
 	if err != nil {
-		log.Printf("project lock error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1113,12 +1068,11 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 	`, id).Scan(&projectID, &status, &oldOrder)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "work item not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 	if err != nil {
-		log.Printf("database query error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1130,8 +1084,7 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 	`, projectID, status).Scan(&maxOrder)
 
 	if err != nil {
-		log.Printf("database query error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1163,8 +1116,7 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 		}
 
 		if err != nil {
-			log.Printf("reordering error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 
@@ -1176,8 +1128,7 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 		`, input.SortOrder, id)
 
 		if err != nil {
-			log.Printf("position update error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -1206,8 +1157,7 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 	)
 
 	if err != nil {
-		log.Printf("database query error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1216,8 +1166,7 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("database commit error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1319,10 +1268,10 @@ func lockProject(ctx context.Context, tx *sql.Tx, projectID int64) error {
 
 }
 
-func (app *application) CreateWorkItemComment(w http.ResponseWriter, r *http.Request) {
+func (app *application) CreateWorkItemCommentHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := readIDParam(r)
 	if err != nil {
-		http.Error(w, "invalid work-item ID", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid work-item ID")
 		return
 	}
 
@@ -1333,14 +1282,14 @@ func (app *application) CreateWorkItemComment(w http.ResponseWriter, r *http.Req
 
 	err = json.NewDecoder(r.Body).Decode(&input)
 	if err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
 	input.Content = strings.TrimSpace(input.Content)
 
 	if input.Content == "" {
-		http.Error(w, "comment cannot be empty", http.StatusBadRequest)
+		clientError(w, http.StatusBadRequest, "comment cannot be empty")
 		return
 	}
 
@@ -1352,12 +1301,11 @@ func (app *application) CreateWorkItemComment(w http.ResponseWriter, r *http.Req
 		"SELECT id FROM work_items WHERE id = $1", id).Scan(&workItemID)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "workitem not found", http.StatusNotFound)
+		clientError(w, http.StatusNotFound, "work item not found")
 		return
 	}
 	if err != nil {
-		log.Printf("database error %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1367,8 +1315,7 @@ func (app *application) CreateWorkItemComment(w http.ResponseWriter, r *http.Req
 
 	err = app.db.QueryRowContext(ctx, query, workItemID, input.Content).Scan(&comment.CommentID, &comment.WorkItemID, &comment.Content, &comment.CreatedAt)
 	if err != nil {
-		log.Printf("database error :%v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -1376,6 +1323,75 @@ func (app *application) CreateWorkItemComment(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusCreated)
 
 	err = json.NewEncoder(w).Encode(comment)
+	if err != nil {
+		log.Printf("JSON encoding error: %v", err)
+		return
+	}
+}
+
+func (app *application) GetWorkItemCommentHandler(w http.ResponseWriter, r *http.Request) {
+
+	id, err := readIDParam(r)
+	if err != nil {
+		clientError(w, http.StatusBadRequest, "invalid work-item ID")
+		return
+	}
+
+	query := `SELECT id, work_item_id, content, created_at
+			FROM work_item_comments
+			WHERE work_item_id = $1
+			ORDER BY created_at ASC, id ASC;  `
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	discussion := []workItemDiscussion{}
+
+	q := `SELECT EXISTS (
+			SELECT 1
+			FROM work_items
+			WHERE id = $1); `
+
+	var found bool
+
+	err = app.db.QueryRowContext(ctx, q, id).Scan(&found)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+
+	if !found {
+		clientError(w, http.StatusNotFound, "WorkItemID not found")
+		return
+	}
+
+	rows, err := app.db.QueryContext(ctx, query, id)
+
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var comment workItemDiscussion
+		err = rows.Scan(&comment.CommentID, &comment.WorkItemID, &comment.Content, &comment.CreatedAt)
+		if err != nil {
+			serverError(w, r, err)
+			return
+		}
+		discussion = append(discussion, comment)
+	}
+
+	if err = rows.Err(); err != nil {
+		serverError(w, r, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	err = json.NewEncoder(w).Encode(discussion)
 	if err != nil {
 		log.Printf("JSON encoding error: %v", err)
 		return

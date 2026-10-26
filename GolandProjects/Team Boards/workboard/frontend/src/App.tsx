@@ -82,15 +82,22 @@ const WIP_LIMITS: Partial<Record<Status, number>> = { Active: 5 };
 function WorkItemCard({
   item,
   onStatusChange,
+  onSelect,
+  selectedWorkItemId,
+  editedTitle,
 }: {
   item: WorkItem;
   onStatusChange: (id: number, status: Status) => void;
+  onSelect: (item: WorkItem) => void;
+  selectedWorkItemId: number | null;
+  editedTitle: string;
 }) {
   const type = TYPE_STYLE[item.work_item_type] ?? TYPE_STYLE["User Story"];
 
   return (
     <article
       className="work-item-card"
+      onClick={() => onSelect(item)}
       style={{ "--type-color": type.color } as React.CSSProperties}
       draggable
       onDragStart={(event) =>
@@ -104,7 +111,9 @@ function WorkItemCard({
           item.work_item_type === "Bug" ? "bug-animated" : ""
        }`}
      />
-        <span>{item.title}</span>
+        <span>
+             {item.id === selectedWorkItemId ? editedTitle : item.title}
+        </span>
       </h3>
 
       {item.description && (
@@ -134,6 +143,7 @@ function WorkItemCard({
         <span className="sr-only">Change status for {item.title}</span>
         <select
           className="status-select"
+          onClick={(event) => event.stopPropagation()}
           aria-label={`Change status for ${item.title}`}
           value={item.status}
           onChange={(event) =>
@@ -156,6 +166,17 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusError, setStatusError] = useState("");
+  const [selectedWorkItemId, setSelectedWorkItemId] = useState<number | null>(null);
+  const [workItemDetails, setWorkItemDetails] = useState<WorkItem | null>(null);
+  const [detailsError, setDetailsError] = useState("");
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [selectedWorkItem, setSelectedWorkItem] = useState<WorkItem | null>(null);
+  const [editedTitle, setEditedTitle] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [editedDescription, setEditedDescription] = useState("");
+ 
+ 
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [title, setTitle] = useState("");
@@ -205,6 +226,44 @@ function App() {
     void loadWorkItems();
   }, []);
 
+  // Fetch full details whenever the selected card ID changes.
+  useEffect(() => {
+    if (selectedWorkItemId === null) {
+      setWorkItemDetails(null);
+      setDetailsError("");
+      setDetailsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setWorkItemDetails(null);
+    setDetailsError("");
+    setDetailsLoading(true);
+
+    async function loadDetails() {
+      try {
+        const response = await fetch(
+          `${API_URL}/v1/work-items/${selectedWorkItemId}`,
+          { signal: controller.signal }
+        );
+        if (!response.ok) {
+          throw new Error(`Could not load details (HTTP ${response.status})`);
+        }
+        const data: WorkItem = await response.json();
+        if (!controller.signal.aborted){setWorkItemDetails(data); setEditedTitle(data.title);setEditedDescription(data.description ?? "");}
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setDetailsError(err instanceof Error ? err.message : "Could not load details");
+        }
+      } finally {
+        if (!controller.signal.aborted) setDetailsLoading(false);
+      }
+    }
+
+    void loadDetails();
+    return () => controller.abort();
+  }, [selectedWorkItemId]);
+
   async function updateWorkItemStatus(id: number, newStatus: Status) {
     setStatusError("");
 
@@ -237,6 +296,54 @@ function App() {
       );
     }
   }
+
+  async function saveWorkItem() {
+  if (selectedWorkItemId === null || !workItemDetails) {
+    return;
+  }
+
+  setSaving(true);
+  setSaveError("");
+
+  try {
+    const response = await fetch(
+      `${API_URL}/v1/work-items/${selectedWorkItemId}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...workItemDetails,
+          title: editedTitle,
+          description: editedDescription,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Save failed (HTTP ${response.status})`);
+    }
+
+    const updatedItem: WorkItem = await response.json();
+
+    setWorkItemDetails(updatedItem);
+
+    setWorkItems((items) =>
+      items.map((item) =>
+        item.id === updatedItem.id ? updatedItem : item
+      )
+    );
+
+    setEditedTitle(updatedItem.title);
+  } catch (err) {
+    setSaveError(
+      err instanceof Error ? err.message : "Could not save work item"
+    );
+  } finally {
+    setSaving(false);
+  }
+}
 
   async function createWorkItem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -531,6 +638,9 @@ function App() {
                           key={item.id}
                           item={item}
                           onStatusChange={updateWorkItemStatus}
+                          onSelect={(item) => setSelectedWorkItemId(item.id)}
+                          selectedWorkItemId={selectedWorkItemId}
+                          editedTitle={editedTitle}
                         />
                       ))}
                     </div>
@@ -538,6 +648,61 @@ function App() {
                 );
               })}
             </div>
+          )}
+          {selectedWorkItemId !== null && (
+            <section className="work-item-details-panel" aria-label="Work item details">
+              <header className="details-panel-header">
+                <h2>Work Item Details</h2>
+                <button
+                  type="button"
+                  onClick={() => setSelectedWorkItemId(null)}
+                  aria-label="Close work item details"
+                >
+                  Close
+                </button>
+              </header>
+              {detailsLoading && <p>Loading details...</p>}
+              {detailsError && <p role="alert">{detailsError}</p>}
+              {workItemDetails && (
+                <div>
+                  <p>{workItemDetails.work_item_type} #{workItemDetails.id}</p>
+                  
+                  <input
+                    type="text"
+                    value={editedTitle}
+                    onChange={(event) => setEditedTitle(event.target.value)}
+                    aria-label="Work item title"
+                  />
+                  {saveError && <p role="alert">{saveError}</p>}
+
+                  <button
+                    type="button"
+                    onClick={saveWorkItem}
+                    disabled={saving || !editedTitle.trim()}
+                  >
+                    {saving ? "Saving..." : "Save"}
+                  </button>
+
+                  <p><strong>Status:</strong> {workItemDetails.status}</p>
+                  <div>
+                    <label htmlFor="work-item-description">
+                      Description
+                    </label>
+
+                    <textarea
+                      id="work-item-description"
+                      value={editedDescription}
+                      onChange={(event) =>
+                        setEditedDescription(event.target.value)
+                      }
+                      rows={4}
+                    />
+                  </div>
+                  <p><strong>Task type:</strong> {workItemDetails.task_type}</p>
+                  <p><strong>Estimated hours:</strong> {workItemDetails.estimated_hours ?? "–"}</p>
+                </div>
+              )}
+            </section>
           )}
         </main>
       </div>
