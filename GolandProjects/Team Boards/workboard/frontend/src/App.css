@@ -268,6 +268,60 @@ button,input,select,textarea{font:inherit}
 }
 
 
+/* Work item card */
+.work-item-card {
+  box-sizing: border-box;
+  padding: 14px 14px 12px;
+  margin-bottom: 10px;
+  border: 1px solid #e1dfdd;
+  border-left: 3px solid var(--type-color, #0078d4);
+  border-radius: 3px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.work-item-card:hover {
+  border-color: #c8c6c4;
+  border-left-color: var(--type-color, #0078d4);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 14%);
+}
+
+.work-item-card h3 {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: #323130;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.work-item-card h3 span {
+  overflow-wrap: anywhere;
+}
+
+.work-item-card p {
+  margin: 6px 0;
+  color: #605e5c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.work-item-card .status-select {
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 4px 6px;
+  border: 1px solid #d1d1d1;
+  border-radius: 3px;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+
+
 /* Animated bug icon on Bug work-item cards */
 .type-icon.bug-animated {
   transform-box: fill-box;
@@ -366,4 +420,93 @@ button,input,select,textarea{font:inherit}
     min-width: 0;
     padding: 16px;
   }
+}
+
+
+/* Work item details panel */
+.work-item-details-panel {
+  box-sizing: border-box;
+  padding: 24px;
+  overflow-y: auto;
+  color: #242424;
+  background: #ffffff;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.details-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.work-item-details-panel label {
+  display: block;
+  margin: 16px 0 6px;
+  color: #424242;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.work-item-details-panel input,
+.work-item-details-panel textarea,
+.work-item-details-panel select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #8a8886;
+  border-radius: 3px;
+  background: #ffffff;
+  color: #242424;
+  font: inherit;
+  font-size: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.work-item-details-panel textarea {
+  min-height: 100px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.work-item-details-panel input:focus,
+.work-item-details-panel textarea:focus,
+.work-item-details-panel select:focus {
+  outline: none;
+  border-color: #0078d4;
+  box-shadow: 0 0 0 1px #0078d4;
+}
+
+.work-item-details-panel button {
+  padding: 8px 16px;
+  border: 1px solid #0078d4;
+  border-radius: 3px;
+  background: #0078d4;
+  color: #ffffff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.work-item-details-panel button:disabled {
+  border-color: #d1d1d1;
+  background: #e6e6e6;
+  color: #888888;
+  cursor: not-allowed;
+}
+
+.work-item-details-panel button:hover:not(:disabled) {
+  background: #106ebe;
+}
+
+/* Highlight the card currently open in the details panel */
+.work-item-card.selected {
+  border-color: #0078d4;
+  border-left: 4px solid #0078d4;
+  background: #f0f7ff;
+  box-shadow: 0 0 0 1px #0078d4;
+}
+
+.work-item-card.selected:hover {
+  box-shadow: 0 0 0 1px #0078d4, 0 3px 8px rgb(0 0 0 / 14%);
 }

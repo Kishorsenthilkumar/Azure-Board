@@ -24,6 +24,10 @@ func router(app *application) http.Handler {
 	router.HandleFunc("PATCH /v1/work-items/{id}/position", app.UpdateWorkItemPositionHandler)
 
 	router.HandleFunc("POST /v1/work-items/{id}/comments", app.CreateWorkItemCommentHandler)
+	router.HandleFunc("GET /v1/work-items/{id}/comments", app.GetWorkItemCommentHandler)
+
+	router.HandleFunc("POST /v1/users", app.CreateUserHandler)
+	router.HandleFunc("GET /v1/users", app.ListUsersHandler)
 
 	return app.enableCORS(router)
 }

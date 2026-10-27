@@ -11,6 +11,12 @@ type CreateWorkItemInput = {
   work_item_type: WorkItemType;
   task_type: TaskType;
   estimated_hours: number | null;
+  assigned_to: number | null;
+};
+
+type User = {
+  id: number;
+  display_name: string;
 };
 
 type WorkItem = {
@@ -23,7 +29,8 @@ type WorkItem = {
   status: Status;
   estimated_hours: number | null;
   sort_order: number;
-  assigned_to?: string | null;
+  assigned_to?: number | null;
+  assigned_name?: string | null;
 };
 
 const API_URL = "http://localhost:8080";
@@ -123,9 +130,9 @@ function WorkItemCard({
       {item.assigned_to && (
         <div className="card-assignee">
           <span className="avatar">
-            {item.assigned_to[0].toUpperCase()}
+            {(item.assigned_name || String(item.assigned_to))[0].toUpperCase()}
           </span>
-          <span className="assignee-name">{item.assigned_to}</span>
+          <span className="assignee-name">{item.assigned_name || `User ${item.assigned_to}`}</span>
         </div>
       )}
 
@@ -163,6 +170,9 @@ function WorkItemCard({
 
 function App() {
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [usersError, setUsersError] = useState("");
+  const [editedAssignedTo, setEditedAssignedTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusError, setStatusError] = useState("");
@@ -175,7 +185,11 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [editedDescription, setEditedDescription] = useState("");
- 
+  const [editedTaskType, setEditedTaskType] = useState("Dev");
+  const [editedHours, setEditedHours] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
+  const [assignedTo, setAssignedTo] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
  
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -223,8 +237,33 @@ function App() {
   }
 
   useEffect(() => {
+  if (!saveSuccess) return;
+
+  const timeoutId = setTimeout(() => {
+    setSaveSuccess("");
+  }, 3000);
+
+  return () => clearTimeout(timeoutId);
+}, [saveSuccess]);
+
+  useEffect(() => {
     void loadWorkItems();
+    void loadUsers();
   }, []);
+
+  async function loadUsers() {
+    try {
+      setUsersError("");
+      const response = await fetch(`${API_URL}/v1/users`);
+      if (!response.ok) {
+        throw new Error(`Could not load users (HTTP ${response.status})`);
+      }
+      const data: User[] = await response.json();
+      setUsers(data);
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : "Could not load users");
+    }
+  }
 
   // Fetch full details whenever the selected card ID changes.
   useEffect(() => {
@@ -239,6 +278,8 @@ function App() {
     setWorkItemDetails(null);
     setDetailsError("");
     setDetailsLoading(true);
+    setSaveSuccess("");
+    setSaveError("");
 
     async function loadDetails() {
       try {
@@ -250,7 +291,11 @@ function App() {
           throw new Error(`Could not load details (HTTP ${response.status})`);
         }
         const data: WorkItem = await response.json();
-        if (!controller.signal.aborted){setWorkItemDetails(data); setEditedTitle(data.title);setEditedDescription(data.description ?? "");}
+        if (!controller.signal.aborted){setWorkItemDetails(data); setEditedTitle(data.title);setEditedDescription(data.description ?? "");setEditedTaskType(data.task_type ?? "Dev");setEditedAssignedTo(data.assigned_to == null ? "" : String(data.assigned_to));setEditedHours(
+  data.estimated_hours == null
+    ? ""
+    : String(data.estimated_hours)
+);}
       } catch (err) {
         if (!controller.signal.aborted) {
           setDetailsError(err instanceof Error ? err.message : "Could not load details");
@@ -302,8 +347,20 @@ function App() {
     return;
   }
 
+  if (
+  editedHours.trim() !== "" &&
+  (
+    !Number.isFinite(Number(editedHours)) ||
+    Number(editedHours) < 0
+  )
+) {
+  setSaveError("Estimated hours must be a valid non-negative number.");
+  return;
+}
+
   setSaving(true);
   setSaveError("");
+  setSaveSuccess("");
 
   try {
     const response = await fetch(
@@ -317,6 +374,9 @@ function App() {
           ...workItemDetails,
           title: editedTitle,
           description: editedDescription,
+          task_type: editedTaskType,
+          assigned_to: editedAssignedTo === "" ? null : Number(editedAssignedTo),
+          estimated_hours:editedHours.trim() === ""? null: Number(editedHours),
         }),
       }
     );
@@ -328,6 +388,16 @@ function App() {
     const updatedItem: WorkItem = await response.json();
 
     setWorkItemDetails(updatedItem);
+    setSaveSuccess("All changes saved");
+
+    setEditedDescription(updatedItem.description ?? "");
+    setEditedTaskType(updatedItem.task_type || "Dev");
+    setEditedHours(
+      updatedItem.estimated_hours == null
+        ? ""
+        : String(updatedItem.estimated_hours)
+    );
+    setIsEditing(false);
 
     setWorkItems((items) =>
       items.map((item) =>
@@ -336,6 +406,7 @@ function App() {
     );
 
     setEditedTitle(updatedItem.title);
+    setEditedAssignedTo(updatedItem.assigned_to == null ? "" : String(updatedItem.assigned_to));
   } catch (err) {
     setSaveError(
       err instanceof Error ? err.message : "Could not save work item"
@@ -371,6 +442,7 @@ function App() {
       work_item_type: workItemType,
       task_type: taskType,
       estimated_hours: hours,
+      assigned_to:assignedTo.trim()===""?null:Number(assignedTo),
     };
 
     setCreating(true);
@@ -408,6 +480,35 @@ function App() {
       setCreating(false);
     }
   }
+
+  const hasUnsavedChanges =
+  workItemDetails !== null &&
+  (
+    editedTitle !== workItemDetails.title ||
+    editedDescription !== (workItemDetails.description ?? "") ||
+    editedTaskType !== (workItemDetails.task_type ?? "Dev") ||
+    editedAssignedTo !== (workItemDetails.assigned_to == null ? "" : String(workItemDetails.assigned_to)) ||
+    editedHours !== (
+      workItemDetails.estimated_hours == null
+        ? ""
+        : String(workItemDetails.estimated_hours)
+    )
+  );
+
+  function handleWorkItemSelect(item: WorkItem) {
+  if (item.id === selectedWorkItemId) return;
+
+  if (isEditing && hasUnsavedChanges) {
+    const confirmed = window.confirm(
+      "You have unsaved changes. Discard them and switch work items?"
+    );
+
+    if (!confirmed) return;
+  }
+
+  setIsEditing(false);
+  setSelectedWorkItemId(item.id);
+}
 
   return (
     <>
@@ -551,6 +652,26 @@ function App() {
                 <option value="Test">Test</option>
               </select>
 
+              <label htmlFor="create-assigned-to">
+              Assign To
+            </label>
+
+            <select
+              id="create-assigned-to"
+              value={assignedTo}
+              onChange={(event) => setAssignedTo(event.target.value)}
+            >
+              <option value="">Unassigned</option>
+
+              {users.map((user) => (
+                <option key={user.id} value={String(user.id)}>
+                  {user.display_name}
+                </option>
+              ))}
+            </select>
+
+{usersError && <p role="alert">{usersError}</p>}
+
               <label htmlFor="estimatedHours">Estimated Hours</label>
               <input
                 id="estimatedHours"
@@ -638,7 +759,7 @@ function App() {
                           key={item.id}
                           item={item}
                           onStatusChange={updateWorkItemStatus}
-                          onSelect={(item) => setSelectedWorkItemId(item.id)}
+                          onSelect={handleWorkItemSelect}
                           selectedWorkItemId={selectedWorkItemId}
                           editedTitle={editedTitle}
                         />
@@ -651,37 +772,140 @@ function App() {
           )}
           {selectedWorkItemId !== null && (
             <section className="work-item-details-panel" aria-label="Work item details">
+              
               <header className="details-panel-header">
-                <h2>Work Item Details</h2>
-                <button
-                  type="button"
-                  onClick={() => setSelectedWorkItemId(null)}
-                  aria-label="Close work item details"
-                >
-                  Close
-                </button>
+                <div className="work-item-header-main">
+                  <p className="work-item-type-label">
+                    {workItemDetails?.work_item_type.toUpperCase()}{" "}
+                    {workItemDetails?.id}
+                  </p>
+
+                  <h2>
+                    {workItemDetails?.id}{" "}
+                    <span>{editedTitle}</span>
+                  </h2>
+                </div>
+
+                <div className="work-item-header-actions">
+                  {!isEditing &&(
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    disabled={detailsLoading || !workItemDetails}
+                  >
+                    Edit
+                  </button>)}
+                  {isEditing && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={saveWorkItem}
+                        disabled={
+                          saving ||
+                          !editedTitle.trim() ||
+                          !hasUnsavedChanges
+                        }
+                      >
+                        {saving ? "Saving..." : "Save"}
+                      </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!workItemDetails) return;
+
+                      setEditedTitle(workItemDetails.title);
+                      setEditedDescription(workItemDetails.description ?? "");
+                      setEditedTaskType(workItemDetails.task_type || "Dev");
+                      setEditedAssignedTo(
+                        workItemDetails.assigned_to == null
+                          ? ""
+                          : String(workItemDetails.assigned_to)
+                      );
+                      setEditedHours(
+                        workItemDetails.estimated_hours == null
+                          ? ""
+                          : String(workItemDetails.estimated_hours)
+                      );
+
+                      setSaveError("");
+                      setSaveSuccess("");
+                      setIsEditing(false);
+                    }}
+                  >
+                    Cancel
+                   </button>
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (hasUnsavedChanges) {
+                        const confirmed = window.confirm(
+                          "You have unsaved changes. Close without saving?"
+                        );
+
+                        if (!confirmed) return;
+                      }
+
+                      setSelectedWorkItemId(null);
+                      setIsEditing(false);
+                      setSaveError("");
+                      setSaveSuccess("");
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
               </header>
+
+              {workItemDetails && (
+                <div className="work-item-identity-row">
+                  <div className="work-item-assignee">
+                    <span className="avatar">
+                      {workItemDetails.assigned_name
+                        ? workItemDetails.assigned_name[0].toUpperCase()
+                        : workItemDetails.assigned_to != null
+                          ? String(workItemDetails.assigned_to)[0]
+                          : "?"}
+                    </span>
+
+                    <span>
+                      {workItemDetails.assigned_name ||
+                        (workItemDetails.assigned_to != null
+                          ? `User ${workItemDetails.assigned_to}`
+                          : "Unassigned")}
+                    </span>
+                  </div>
+
+                  <div className="work-item-tags">
+                    <span className="work-item-tag">
+                      {workItemDetails.task_type}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {detailsLoading && <p>Loading details...</p>}
               {detailsError && <p role="alert">{detailsError}</p>}
               {workItemDetails && (
                 <div>
-                  <p>{workItemDetails.work_item_type} #{workItemDetails.id}</p>
                   
+                  {isEditing ?(
                   <input
                     type="text"
                     value={editedTitle}
-                    onChange={(event) => setEditedTitle(event.target.value)}
+                    onChange={(event) => {setEditedTitle(event.target.value);setSaveSuccess("");}}
                     aria-label="Work item title"
-                  />
+                  />):(<p>{workItemDetails.title}</p>)}
+
                   {saveError && <p role="alert">{saveError}</p>}
 
-                  <button
-                    type="button"
-                    onClick={saveWorkItem}
-                    disabled={saving || !editedTitle.trim()}
-                  >
-                    {saving ? "Saving..." : "Save"}
-                  </button>
+                  {saveSuccess && (
+                    <p role="status" style={{ color: "green" }}>
+                      {saveSuccess}
+                    </p>
+                  )}
 
                   <p><strong>Status:</strong> {workItemDetails.status}</p>
                   <div>
@@ -689,17 +913,82 @@ function App() {
                       Description
                     </label>
 
+                    {isEditing?(
                     <textarea
                       id="work-item-description"
                       value={editedDescription}
                       onChange={(event) =>
-                        setEditedDescription(event.target.value)
+                        {setEditedDescription(event.target.value);setSaveSuccess("");}
                       }
                       rows={4}
-                    />
+                    />):(<p>{workItemDetails.description || "No description provided"}</p>)}
                   </div>
-                  <p><strong>Task type:</strong> {workItemDetails.task_type}</p>
-                  <p><strong>Estimated hours:</strong> {workItemDetails.estimated_hours ?? "–"}</p>
+                  <div>
+                    {isEditing?(
+                    <>
+                    <label htmlFor="work-item-assignee">
+                      Assigned To
+                    </label>
+                    <select
+                      id="work-item-assignee"
+                      value={editedAssignedTo}
+                      onChange={(event) => {
+                        setEditedAssignedTo(event.target.value);
+                        setSaveSuccess("");
+                        setSaveError("");
+                      }}
+                    >
+                      <option value="">Unassigned</option>
+                      {users.map((user) => (
+                        <option key={user.id} value={String(user.id)}>
+                          {user.display_name}
+                        </option>
+                      ))}
+                    </select>
+                    </>):(<p>
+    {workItemDetails.assigned_name || "Unassigned"}
+  </p>)}
+                    {usersError && <p role="alert">{usersError}</p>}
+                  </div>
+                  <div>
+                    <label htmlFor="work-item-task-type">
+                      Task Type
+                    </label>
+
+                    {isEditing?(
+                    <select
+                      id="work-item-task-type"
+                      value={editedTaskType}
+                      onChange={(event) =>
+                        {setEditedTaskType(event.target.value);setSaveSuccess("");}
+                      }
+                    >
+                      <option value="Dev">Dev</option>
+                      <option value="Prod">Prod</option>
+                      <option value="Test">Test</option>
+                    </select>):(<p>{workItemDetails.task_type || "Not set"}</p>)}
+                  </div>
+                  <div>
+                    <label htmlFor="work-item-estimated-hours">
+                      Estimated Hours
+                    </label>
+
+                    {isEditing?(
+                    <input
+                      id="work-item-estimated-hours"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={editedHours}
+                      onChange={(event) =>
+                        {setEditedHours(event.target.value);setSaveSuccess("");setSaveError("");}
+                      }
+                    />):(<p>
+                          {workItemDetails.estimated_hours == null
+                            ? "Not set"
+                            : `${workItemDetails.estimated_hours} hours`}
+                        </p>)}
+                  </div>
                 </div>
               )}
             </section>

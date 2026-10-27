@@ -29,6 +29,8 @@ type workItem struct {
 	WorkItemType   string    `json:"work_item_type"`
 	TaskType       string    `json:"task_type"`
 	Status         string    `json:"status"`
+	AssignedTo     *int64    `json:"assigned_to"`
+	AssignedName   *string   `json:"assigned_name"`
 	EstimatedHours *float64  `json:"estimated_hours"`
 	SortOrder      int64     `json:"sort_order"`
 	CreatedAt      time.Time `json:"created_at"`
@@ -40,6 +42,13 @@ type workItemDiscussion struct {
 	WorkItemID int64     `json:"work_item_id"`
 	Content    string    `json:"content"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type user struct {
+	ID          int64     `json:"id"`
+	DisplayName string    `json:"display_name"`
+	Email       string    `json:"email"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func (app *application) HealthHandler(w http.ResponseWriter, r *http.Request) {
@@ -373,6 +382,26 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	if input.AssignedTo != nil {
+		var exists bool
+
+		err := app.db.QueryRowContext(
+			r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)`,
+			*input.AssignedTo,
+		).Scan(&exists)
+
+		if err != nil {
+			serverError(w, r, err)
+			return
+		}
+
+		if !exists {
+			clientError(w, http.StatusBadRequest, "assigned user not found")
+			return
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -395,33 +424,44 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	var estimatedHours sql.NullFloat64
+	var assignedTo sql.NullInt64
 
 	query := `
     INSERT INTO work_items (
-        project_id,
-        title,
-        description,
-        work_item_type,
-        task_type,
-        status,
-        estimated_hours,
-        sort_order
+    project_id,
+    title,
+    description,
+    work_item_type,
+    task_type,
+    status,
+    estimated_hours,
+    assigned_to,
+    sort_order
+)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8,
+    COALESCE(
+        (
+            SELECT MAX(sort_order) + 1
+            FROM work_items
+            WHERE project_id = $1 AND status = $9
+        ),
+        1
     )
-    VALUES (
-        $1, $2, $3, $4, $5, $6, $7,
-        COALESCE(
-            (
-                SELECT MAX(sort_order) + 1
-                FROM work_items
-                WHERE project_id = $1 AND status = $8
-            ),
-            1
-        )
-    )
-    RETURNING
-        id, project_id, title, description,
-        work_item_type, task_type, status,
-        estimated_hours, sort_order, created_at, updated_at;
+)
+RETURNING
+    id,
+    project_id,
+    title,
+    description,
+    work_item_type,
+    task_type,
+    status,
+    estimated_hours,
+    assigned_to,
+    sort_order,
+    created_at,
+    updated_at;
 `
 
 	args := []interface{}{
@@ -432,6 +472,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		input.TaskType,
 		input.Status,
 		input.EstimatedHours,
+		input.AssignedTo,
 		input.Status,
 	}
 
@@ -444,6 +485,7 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		&input.TaskType,
 		&input.Status,
 		&estimatedHours,
+		&assignedTo,
 		&input.SortOrder,
 		&input.CreatedAt,
 		&input.UpdatedAt,
@@ -462,10 +504,35 @@ func (app *application) CreateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	if assignedTo.Valid {
+		input.AssignedTo = &assignedTo.Int64
+	} else {
+		input.AssignedTo = nil
+	}
+
 	if estimatedHours.Valid {
 		input.EstimatedHours = &estimatedHours.Float64
 	} else {
 		input.EstimatedHours = nil
+	}
+
+	if input.AssignedTo != nil {
+		var assignedName string
+
+		err = tx.QueryRowContext(
+			ctx,
+			`SELECT display_name FROM users WHERE id = $1`,
+			*input.AssignedTo,
+		).Scan(&assignedName)
+
+		if err != nil {
+			serverError(w, r, err)
+			return
+		}
+
+		input.AssignedName = &assignedName
+	} else {
+		input.AssignedName = nil
 	}
 
 	// Commit before returning a successful response.
@@ -545,15 +612,27 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	query := `
-    SELECT id, project_id, title, description,
-           work_item_type, task_type, status,
-           estimated_hours,sort_order, created_at, updated_at
-    FROM work_items
-    WHERE project_id = $1
-      AND ($2 = '' OR status = $2)
-      AND ($3 = '' OR work_item_type = $3)
-      AND ($4 = '' OR task_type = $4)
-    ORDER BY sort_order,id;
+     SELECT
+    wi.id,
+    wi.project_id,
+    wi.title,
+    wi.description,
+    wi.work_item_type,
+    wi.task_type,
+    wi.status,
+    wi.estimated_hours,
+    wi.assigned_to,
+    u.display_name AS assigned_name,
+    wi.sort_order,
+    wi.created_at,
+    wi.updated_at
+FROM work_items AS wi
+LEFT JOIN users AS u ON u.id = wi.assigned_to
+WHERE wi.project_id = $1
+  AND ($2 = '' OR wi.status = $2)
+  AND ($3 = '' OR wi.work_item_type = $3)
+  AND ($4 = '' OR wi.task_type = $4)
+ORDER BY wi.sort_order, wi.id;
 `
 
 	rows, err := app.db.QueryContext(ctx, query, projectID, status, workItemType, taskType)
@@ -568,6 +647,8 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 	for rows.Next() {
 		var item workItem
 		var estimatedHours sql.NullFloat64
+		var assignedTo sql.NullInt64
+		var assignedName sql.NullString
 
 		err := rows.Scan(
 			&item.ID,
@@ -578,13 +659,24 @@ func (app *application) ListWorkItemsHandler(w http.ResponseWriter, r *http.Requ
 			&item.TaskType,
 			&item.Status,
 			&estimatedHours,
+			&assignedTo,
+			&assignedName,
 			&item.SortOrder,
 			&item.CreatedAt,
 			&item.UpdatedAt,
 		)
+
 		if err != nil {
 			serverError(w, r, err)
 			return
+		}
+
+		if assignedTo.Valid {
+			item.AssignedTo = &assignedTo.Int64
+		}
+
+		if assignedName.Valid {
+			item.AssignedName = &assignedName.String
 		}
 
 		if estimatedHours.Valid {
@@ -614,19 +706,31 @@ func (app *application) GetWorkItemHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	query := `
-        SELECT id, project_id, title, description,
-               work_item_type, task_type, status,
-               estimated_hours,sort_order, created_at, updated_at
-        FROM work_items
-        WHERE id = $1;
-    `
+	query := `SELECT
+    wi.id,
+    wi.project_id,
+    wi.title,
+    wi.description,
+    wi.work_item_type,
+    wi.task_type,
+    wi.status,
+    wi.estimated_hours,
+    wi.assigned_to,
+    u.display_name AS assigned_name,
+    wi.sort_order,
+    wi.created_at,
+    wi.updated_at
+FROM work_items AS wi
+LEFT JOIN users AS u ON u.id = wi.assigned_to
+WHERE wi.id = $1;`
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	var item workItem
 	var estimatedHours sql.NullFloat64
+	var assignedTo sql.NullInt64
+	var assignedName sql.NullString
 
 	err = app.db.QueryRowContext(ctx, query, id).Scan(
 		&item.ID,
@@ -637,6 +741,8 @@ func (app *application) GetWorkItemHandler(w http.ResponseWriter, r *http.Reques
 		&item.TaskType,
 		&item.Status,
 		&estimatedHours,
+		&assignedTo,
+		&assignedName,
 		&item.SortOrder,
 		&item.CreatedAt,
 		&item.UpdatedAt,
@@ -652,6 +758,12 @@ func (app *application) GetWorkItemHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if assignedTo.Valid {
+		item.AssignedTo = &assignedTo.Int64
+	}
+	if assignedName.Valid {
+		item.AssignedName = &assignedName.String
+	}
 	if estimatedHours.Valid {
 		item.EstimatedHours = &estimatedHours.Float64
 	}
@@ -678,6 +790,7 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		TaskType       string   `json:"task_type"`
 		Status         string   `json:"status"`
 		EstimatedHours *float64 `json:"estimated_hours"`
+		AssignedTo     *int64   `json:"assigned_to"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -717,6 +830,26 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	if input.AssignedTo != nil {
+		var exists bool
+
+		err := app.db.QueryRowContext(
+			r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)`,
+			*input.AssignedTo,
+		).Scan(&exists)
+
+		if err != nil {
+			serverError(w, r, err)
+			return
+		}
+
+		if !exists {
+			clientError(w, http.StatusBadRequest, "assigned user not found")
+			return
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -740,16 +873,24 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 
 	// Update the remaining fields without changing status or sort_order.
 	_, err = tx.ExecContext(ctx, `
-		UPDATE work_items
-		SET title = $1,
-		    description = $2,
-		    work_item_type = $3,
-		    task_type = $4,
-		    estimated_hours = $5,
-		    updated_at = NOW()
-		WHERE id = $6
-	`, input.Title, input.Description, input.WorkItemType,
-		input.TaskType, input.EstimatedHours, id)
+    UPDATE work_items
+    SET title = $1,
+        description = $2,
+        work_item_type = $3,
+        task_type = $4,
+        estimated_hours = $5,
+        assigned_to = $6,
+        updated_at = NOW()
+    WHERE id = $7
+`,
+		input.Title,
+		input.Description,
+		input.WorkItemType,
+		input.TaskType,
+		input.EstimatedHours,
+		input.AssignedTo,
+		id,
+	)
 
 	if err != nil {
 		serverError(w, r, err)
@@ -758,14 +899,28 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 
 	var item workItem
 	var estimatedHours sql.NullFloat64
+	var assignedTo sql.NullInt64
+	var assignedName sql.NullString
 
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, project_id, title, description,
-		       work_item_type, task_type, status,
-		       estimated_hours, sort_order, created_at, updated_at
-		FROM work_items
-		WHERE id = $1
-	`, id).Scan(
+    SELECT
+        wi.id,
+        wi.project_id,
+        wi.title,
+        wi.description,
+        wi.work_item_type,
+        wi.task_type,
+        wi.status,
+        wi.estimated_hours,
+        wi.assigned_to,
+        u.display_name AS assigned_name,
+        wi.sort_order,
+        wi.created_at,
+        wi.updated_at
+    FROM work_items AS wi
+    LEFT JOIN users AS u ON u.id = wi.assigned_to
+    WHERE wi.id = $1
+`, id).Scan(
 		&item.ID,
 		&item.ProjectID,
 		&item.Title,
@@ -774,6 +929,8 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		&item.TaskType,
 		&item.Status,
 		&estimatedHours,
+		&assignedTo,
+		&assignedName,
 		&item.SortOrder,
 		&item.CreatedAt,
 		&item.UpdatedAt,
@@ -787,7 +944,26 @@ func (app *application) UpdateWorkItemHandler(w http.ResponseWriter, r *http.Req
 		serverError(w, r, err)
 		return
 	}
+	if assignedTo.Valid {
+		item.AssignedTo = &assignedTo.Int64
+	}
 
+	if assignedName.Valid {
+		item.AssignedName = &assignedName.String
+	}
+
+	if assignedTo.Valid {
+		item.AssignedTo = &assignedTo.Int64
+	}
+	if assignedName.Valid {
+		item.AssignedName = &assignedName.String
+	}
+	if assignedTo.Valid {
+		item.AssignedTo = &assignedTo.Int64
+	}
+	if assignedName.Valid {
+		item.AssignedName = &assignedName.String
+	}
 	if estimatedHours.Valid {
 		item.EstimatedHours = &estimatedHours.Float64
 	}
@@ -953,12 +1129,17 @@ func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *ht
 	var item workItem
 	var estimatedHours sql.NullFloat64
 
+	var assignedTo sql.NullInt64
+	var assignedName sql.NullString
+
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, project_id, title, description,
-		       work_item_type, task_type, status,
-		       estimated_hours, sort_order, created_at, updated_at
-		FROM work_items
-		WHERE id = $1
+		SELECT wi.id, wi.project_id, wi.title, wi.description,
+		       wi.work_item_type, wi.task_type, wi.status,
+		       wi.estimated_hours, wi.assigned_to, u.display_name,
+		       wi.sort_order, wi.created_at, wi.updated_at
+		FROM work_items AS wi
+		LEFT JOIN users AS u ON u.id = wi.assigned_to
+		WHERE wi.id = $1
 	`, id).Scan(
 		&item.ID,
 		&item.ProjectID,
@@ -968,6 +1149,8 @@ func (app *application) UpdateWorkItemStatusHandler(w http.ResponseWriter, r *ht
 		&item.TaskType,
 		&item.Status,
 		&estimatedHours,
+		&assignedTo,
+		&assignedName,
 		&item.SortOrder,
 		&item.CreatedAt,
 		&item.UpdatedAt,
@@ -1136,12 +1319,17 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 	var item workItem
 	var estimatedHours sql.NullFloat64
 
+	var assignedTo sql.NullInt64
+	var assignedName sql.NullString
+
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, project_id, title, description,
-		       work_item_type, task_type, status,
-		       estimated_hours, sort_order, created_at, updated_at
-		FROM work_items
-		WHERE id = $1
+		SELECT wi.id, wi.project_id, wi.title, wi.description,
+		       wi.work_item_type, wi.task_type, wi.status,
+		       wi.estimated_hours, wi.assigned_to, u.display_name,
+		       wi.sort_order, wi.created_at, wi.updated_at
+		FROM work_items AS wi
+		LEFT JOIN users AS u ON u.id = wi.assigned_to
+		WHERE wi.id = $1
 	`, id).Scan(
 		&item.ID,
 		&item.ProjectID,
@@ -1151,6 +1339,8 @@ func (app *application) UpdateWorkItemPositionHandler(w http.ResponseWriter, r *
 		&item.TaskType,
 		&item.Status,
 		&estimatedHours,
+		&assignedTo,
+		&assignedName,
 		&item.SortOrder,
 		&item.CreatedAt,
 		&item.UpdatedAt,
@@ -1395,5 +1585,105 @@ func (app *application) GetWorkItemCommentHandler(w http.ResponseWriter, r *http
 	if err != nil {
 		log.Printf("JSON encoding error: %v", err)
 		return
+	}
+}
+
+func (app *application) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		DisplayName string `json:"display_name"`
+		Email       string `json:"email"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		clientError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	input.Email = strings.TrimSpace(input.Email)
+
+	if input.DisplayName == "" {
+		clientError(w, http.StatusBadRequest, "display name cannot be empty")
+		return
+	}
+
+	if input.Email == "" || !strings.Contains(input.Email, "@") {
+		clientError(w, http.StatusBadRequest, "valid email is required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var u user
+
+	query := `
+		INSERT INTO users (display_name, email)
+		VALUES ($1, $2)
+		RETURNING id, display_name, email, created_at;
+	`
+
+	err := app.db.QueryRowContext(
+		ctx, query, input.DisplayName, input.Email,
+	).Scan(&u.ID, &u.DisplayName, &u.Email, &u.CreatedAt)
+
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	if err := json.NewEncoder(w).Encode(u); err != nil {
+		log.Printf("JSON encoding error: %v", err)
+	}
+}
+
+func (app *application) ListUsersHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	users := []user{}
+
+	query := `
+		SELECT id, display_name, email, created_at
+		FROM users
+		ORDER BY display_name, id;
+	`
+
+	rows, err := app.db.QueryContext(ctx, query)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var u user
+
+		if err := rows.Scan(
+			&u.ID,
+			&u.DisplayName,
+			&u.Email,
+			&u.CreatedAt,
+		); err != nil {
+			serverError(w, r, err)
+			return
+		}
+
+		users = append(users, u)
+	}
+
+	if err := rows.Err(); err != nil {
+		serverError(w, r, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(users); err != nil {
+		log.Printf("JSON encoding error: %v", err)
 	}
 }
