@@ -510,3 +510,458 @@ button,input,select,textarea{font:inherit}
 .work-item-card.selected:hover {
   box-shadow: 0 0 0 1px #0078d4, 0 3px 8px rgb(0 0 0 / 14%);
 }
+
+/* Azure DevOps-style Discussion */
+.discussion-section {
+  margin-top: 30px;
+  max-width: 100%;
+  text-align: left;
+}
+
+.discussion-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #d6d6d6;
+}
+
+.discussion-header h3 {
+  margin: 0;
+  color: #005a9e;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.discussion-count {
+  color: #605e5c;
+  font-size: 12px;
+}
+
+.discussion-form,
+.discussion-comment {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.discussion-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #005a9e;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.current-user-avatar {
+  margin-top: 4px;
+  background: #0078d4;
+  color: #fff;
+}
+
+.discussion-composer,
+.discussion-comment-card {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #e1dfdd;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.discussion-composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 86px;
+  padding: 10px;
+  resize: vertical;
+  border: 0;
+  border-radius: 4px;
+  outline: none;
+  color: #323130;
+  font: inherit;
+  line-height: 1.5;
+}
+
+.discussion-composer textarea:focus {
+  box-shadow: inset 0 0 0 1px #0078d4;
+}
+
+.discussion-composer textarea::placeholder {
+  color: #8a8886;
+  font-style: italic;
+}
+
+.discussion-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px;
+  border-top: 1px solid #edebe9;
+  background: #faf9f8;
+}
+
+.discussion-composer-actions button {
+  padding: 6px 14px;
+  border: 1px solid #0078d4;
+  border-radius: 3px;
+  background: #0078d4;
+  color: #fff;
+  cursor: pointer;
+}
+
+.discussion-composer-actions button:disabled {
+  border-color: #d1d1d1;
+  background: #e6e6e6;
+  color: #888;
+  cursor: not-allowed;
+}
+
+.discussion-composer-actions button:hover:not(:disabled) {
+  background: #106ebe;
+}
+
+.discussion-comment-card {
+  padding: 12px;
+}
+
+.discussion-comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.discussion-comment-meta strong {
+  color: #323130;
+  font-size: 13px;
+}
+
+.discussion-comment-meta span {
+  color: #797775;
+}
+
+.discussion-comment-content {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.discussion-muted {
+  margin: 12px 0;
+  color: #797775;
+  font-size: 13px;
+}
+
+.discussion-error {
+  color: #a4262c;
+  font-size: 13px;
+}
+
+/* Azure DevOps-inspired work item header */
+.work-item-details-panel .details-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #e1dfdd;
+}
+
+.details-header-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.details-work-item-type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: #0078d4;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.details-work-item-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 !important;
+  color: #323130;
+  font-size: 22px !important;
+  font-weight: 400 !important;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.details-work-item-title > span:first-child {
+  color: #605e5c;
+}
+
+.details-work-item-title input {
+  flex: 1;
+  min-width: 120px;
+  width: 100%;
+  font-size: 20px !important;
+}
+
+.work-item-details-panel .work-item-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.work-item-details-panel .work-item-header-actions button {
+  padding: 6px 10px;
+  border: 1px solid #d1d1d1;
+  border-radius: 2px;
+  background: #fff;
+  color: #323130;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.work-item-details-panel .work-item-header-actions button:hover:not(:disabled) {
+  background: #f3f2f1;
+}
+
+@media (max-width: 600px) {
+  .work-item-details-panel .details-panel-header {
+    flex-direction: column;
+  }
+
+  .work-item-details-panel .work-item-header-actions {
+    justify-content: flex-start;
+  }
+}
+.work-item-identity-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.work-item-assignee {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  font-size: 13px;
+}
+
+.work-item-comment-link,
+.work-item-follow-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #0078d4 !important;
+  font-size: 12px !important;
+  cursor: pointer;
+}
+
+.work-item-comment-link:hover,
+.work-item-follow-button:hover {
+  background: #f3f2f1 !important;
+}
+
+.work-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.work-item-tag {
+  padding: 4px 10px;
+  border-radius: 2px;
+  background: #e1dfdd;
+  color: #323130;
+  font-size: 12px;
+}
+
+.work-item-identity-row .tag-dev {
+  background: #5da944;
+  color: white;
+}
+
+.work-item-identity-row .tag-prod {
+  background: #36b5d8;
+  color: white;
+}
+
+.work-item-identity-row .tag-test {
+  background: #ffb900;
+  color: #323130;
+}
+
+/* Work item fields spacing */
+.work-item-details-panel > section,
+.work-item-details-panel > div {
+  text-align: left;
+}
+
+.work-item-details-panel label {
+  margin-top: 20px;
+}
+
+.work-item-details-panel p {
+  overflow-wrap: anywhere;
+}
+
+.work-item-details-panel .discussion-section {
+  margin-top: 32px;
+}
+
+/* Work item fields layout */
+.work-item-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 24px;
+  margin-top: 20px;
+}
+
+.work-item-field {
+  min-width: 0;
+}
+
+.work-item-field label {
+  display: block;
+  margin: 0 0 8px;
+  color: #605e5c;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.work-item-field .work-item-field-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #323130;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.work-item-field input,
+.work-item-field select,
+.work-item-field textarea {
+  width: 100%;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #0078d4;
+}
+
+.status-new {
+  background: #0078d4;
+}
+
+.status-active {
+  background: #0078d4;
+}
+
+.status-resolved {
+  background: #107c10;
+}
+
+.status-closed {
+  background: #605e5c;
+}
+
+@media (max-width: 480px) {
+  .work-item-fields-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+}
+
+
+.work-item-body-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
+  gap: 28px;
+  align-items: start;
+  margin-top: 20px;
+}
+
+.work-item-main-column,
+.work-item-sidebar-column {
+  min-width: 0;
+}
+
+.work-item-sidebar-column {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.work-item-content-section {
+  min-width: 0;
+  margin-bottom: 28px;
+}
+
+.work-item-content-section > h3 {
+  margin: 0 0 14px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #d6d6d6;
+  color: #323130;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.work-item-content-section > p {
+  margin: 0;
+  color: #605e5c;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.work-item-sidebar-column .work-item-field {
+  margin-bottom: 20px;
+}
+
+.work-item-sidebar-column .work-item-field label {
+  margin-bottom: 8px;
+}
+
+.work-item-sidebar-column .work-item-field .work-item-field-value {
+  font-size: 13px;
+}
+
+.work-item-main-column .discussion-section {
+  margin-top: 36px;
+}
+
+@media (max-width: 650px) {
+  .work-item-body-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .work-item-sidebar-column {
+    gap: 12px;
+  }
+}
