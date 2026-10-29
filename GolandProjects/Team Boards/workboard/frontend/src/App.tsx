@@ -69,6 +69,8 @@ const ICONS: Record<string, string> = {
   story: '<path d="M3 2h9a1 1 0 011 1v10H5a2 2 0 00-2 2z"/>',
   bug: '<circle cx="8" cy="9.5" r="4.5"/><circle cx="8" cy="3.8" r="2"/>',
   task: '<rect x="3" y="3" width="10" height="11" rx="1.5"/><rect x="6" y="1.5" width="4" height="3" rx="1"/>',
+  save: '<path d="M2 1.5h10l2.5 2.5v10.5H1.5V1.5z"/><path d="M4 1.5v4h7v-4M4 14.5V9h8v5.5"/>',
+  refresh: '<path d="M13.5 5.5A6 6 0 1 0 14 8"/><path d="M13.5 1.5v4h-4"/>',
 };
 
 function Icon({ name, className = "" }: { name: string; className?: string }) {
@@ -508,6 +510,57 @@ function App() {
     }
   }
 
+  async function refreshWorkItem() {
+    if (selectedWorkItemId === null) return;
+
+    if (isEditing && hasUnsavedChanges) {
+      const confirmed = window.confirm(
+        "Discard unsaved changes and reload the work item?",
+      );
+      if (!confirmed) return;
+    }
+
+    setDetailsLoading(true);
+    setDetailsError("");
+
+    try {
+      const response = await fetch(
+        `${API_URL}/v1/work-items/${selectedWorkItemId}`,
+      );
+
+      if (!response.ok) {
+        throw new Error(`Refresh failed (HTTP ${response.status})`);
+      }
+
+      const data: WorkItem = await response.json();
+
+      setWorkItemDetails(data);
+      setEditedTitle(data.title);
+      setEditedDescription(data.description ?? "");
+      setEditedTaskType(data.task_type ?? "Dev");
+      setEditedAssignedTo(
+        data.assigned_to == null ? "" : String(data.assigned_to),
+      );
+      setEditedHours(
+        data.estimated_hours == null ? "" : String(data.estimated_hours),
+      );
+
+      setWorkItems((items) =>
+        items.map((item) => (item.id === data.id ? data : item)),
+      );
+
+      setIsEditing(false);
+      setSaveError("");
+      setSaveSuccess("");
+    } catch (err) {
+      setDetailsError(
+        err instanceof Error ? err.message : "Could not refresh work item",
+      );
+    } finally {
+      setDetailsLoading(false);
+    }
+  }
+
   async function createWorkItem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCreateError("");
@@ -930,6 +983,7 @@ function App() {
                   {!isEditing && (
                     <button
                       type="button"
+                      className="header-action-button"
                       onClick={() => setIsEditing(true)}
                       disabled={detailsLoading || !workItemDetails}
                     >
@@ -997,6 +1051,17 @@ function App() {
                     }}
                   >
                     Close
+                  </button>
+
+                  <button
+                    type="button"
+                    className="header-action-button refresh-action"
+                    onClick={refreshWorkItem}
+                    disabled={detailsLoading || saving || !workItemDetails}
+                    title="Refresh work item"
+                    aria-label="Refresh work item"
+                  >
+                    <Icon name="refresh" />
                   </button>
                 </div>
               </header>

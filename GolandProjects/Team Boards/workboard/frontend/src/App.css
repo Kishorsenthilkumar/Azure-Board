@@ -965,3 +965,28 @@ button,input,select,textarea{font:inherit}
     gap: 12px;
   }
 }
+.save-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid #d1d1d1;
+  background: #f3f2f1;
+  color: #323130;
+  cursor: pointer;
+}
+
+.save-action:disabled {
+  color: #a19f9d;
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.save-action:not(:disabled):hover {
+  background: #e1dfdd;
+}
+
+.save-action .icon {
+  width: 16px;
+  height: 16px;
+}
