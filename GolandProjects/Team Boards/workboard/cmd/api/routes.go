@@ -29,5 +29,9 @@ func router(app *application) http.Handler {
 	router.HandleFunc("POST /v1/users", app.CreateUserHandler)
 	router.HandleFunc("GET /v1/users", app.ListUsersHandler)
 
+	router.HandleFunc("POST /v1/projects/{id}/repositories", app.CreateRepositoryHandler)
+	router.HandleFunc("GET /v1/projects/{id}/repositories", app.ListRepositoriesHandler)
+	router.HandleFunc("GET /v1/projects/{id}/repositories/{repositoryID}", app.GetRepositoryHandler)
+
 	return app.enableCORS(router)
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +50,17 @@ type user struct {
 	DisplayName string    `json:"display_name"`
 	Email       string    `json:"email"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+type repository struct {
+	ID            int64     `json:"id"`
+	ProjectID     int64     `json:"project_id"`
+	Provider      string    `json:"provider"`
+	Name          string    `json:"name"`
+	CloneURL      string    `json:"clone_url"`
+	DefaultBranch string    `json:"default_branch"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 func (app *application) HealthHandler(w http.ResponseWriter, r *http.Request) {
@@ -1685,5 +1697,297 @@ func (app *application) ListUsersHandler(w http.ResponseWriter, r *http.Request)
 
 	if err := json.NewEncoder(w).Encode(users); err != nil {
 		log.Printf("JSON encoding error: %v", err)
+	}
+}
+
+func (app *application) CreateRepositoryHandler(w http.ResponseWriter, r *http.Request) {
+
+	id, err := readIDParam(r)
+	if err != nil {
+		clientError(w, http.StatusBadRequest, "invalid project ID")
+		return
+	}
+
+	var input struct {
+		Provider      string `json:"provider"`
+		Name          string `json:"name"`
+		CloneURL      string `json:"clone_url"`
+		DefaultBranch string `json:"default_branch"`
+	}
+
+	err = json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		clientError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	input.Provider = strings.TrimSpace(input.Provider)
+	input.Name = strings.TrimSpace(input.Name)
+	input.CloneURL = strings.TrimSpace(input.CloneURL)
+	input.DefaultBranch = strings.TrimSpace(input.DefaultBranch)
+
+	switch input.Provider {
+	case "github", "gitea":
+		// Valid provider.
+	default:
+		clientError(w, http.StatusBadRequest, "invalid repository provider")
+		return
+	}
+
+	if input.Name == "" {
+		clientError(w, http.StatusBadRequest, "repository name cannot be empty")
+		return
+	}
+
+	if input.CloneURL == "" {
+		clientError(w, http.StatusBadRequest, "clone URL cannot be empty")
+		return
+	}
+
+	if input.DefaultBranch == "" {
+		input.DefaultBranch = "main"
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var exists bool
+
+	err = app.db.QueryRowContext(
+		ctx,
+		`SELECT EXISTS (
+        SELECT 1 FROM projects WHERE id = $1
+    )`,
+		id,
+	).Scan(&exists)
+
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+
+	if !exists {
+		clientError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	var repo repository
+
+	query := `
+    INSERT INTO repositories (
+        project_id,
+        provider,
+        name,
+        clone_url,
+        default_branch
+    )
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING
+        id,
+        project_id,
+        provider,
+        name,
+        clone_url,
+        default_branch,
+        created_at,
+        updated_at;
+`
+
+	err = app.db.QueryRowContext(
+		ctx,
+		query,
+		id,
+		input.Provider,
+		input.Name,
+		input.CloneURL,
+		input.DefaultBranch,
+	).Scan(
+		&repo.ID,
+		&repo.ProjectID,
+		&repo.Provider,
+		&repo.Name,
+		&repo.CloneURL,
+		&repo.DefaultBranch,
+		&repo.CreatedAt,
+		&repo.UpdatedAt,
+	)
+
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	if err := json.NewEncoder(w).Encode(repo); err != nil {
+		log.Printf("JSON encoding error: %v", err)
+		return
+	}
+}
+
+func (app *application) ListRepositoriesHandler(w http.ResponseWriter, r *http.Request) {
+	// Step 1: Read project ID.
+	projectID, err := readIDParam(r)
+	if err != nil {
+		clientError(w, http.StatusBadRequest, "invalid project ID")
+		return
+	}
+
+	// Step 2: Create request context with timeout.
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// Step 3: Check whether the project exists.
+	var exists bool
+
+	err = app.db.QueryRowContext(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM projects WHERE id = $1
+		)`,
+		projectID,
+	).Scan(&exists)
+
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+
+	if !exists {
+		clientError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	// Step 4: Fetch repositories belonging to this project.
+	query := `
+		SELECT
+			id,
+			project_id,
+			provider,
+			name,
+			clone_url,
+			default_branch,
+			created_at,
+			updated_at
+		FROM repositories
+		WHERE project_id = $1
+		ORDER BY id;
+	`
+
+	rows, err := app.db.QueryContext(ctx, query, projectID)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	defer rows.Close()
+
+	// Step 5: Scan repository records.
+	repositories := []repository{}
+
+	for rows.Next() {
+		var repo repository
+
+		err := rows.Scan(
+			&repo.ID,
+			&repo.ProjectID,
+			&repo.Provider,
+			&repo.Name,
+			&repo.CloneURL,
+			&repo.DefaultBranch,
+			&repo.CreatedAt,
+			&repo.UpdatedAt,
+		)
+
+		if err != nil {
+			serverError(w, r, err)
+			return
+		}
+
+		repositories = append(repositories, repo)
+	}
+
+	// Step 6: Check iteration errors.
+	if err := rows.Err(); err != nil {
+		serverError(w, r, err)
+		return
+	}
+
+	// Step 7: Return response.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(repositories); err != nil {
+		log.Printf("JSON encoding error: %v", err)
+		return
+	}
+}
+
+func (app *application) GetRepositoryHandler(w http.ResponseWriter, r *http.Request) {
+	// Read project ID.
+	projectID, err := readIDParam(r)
+	if err != nil {
+		clientError(w, http.StatusBadRequest, "invalid project ID")
+		return
+	}
+
+	// Read repository ID.
+	repositoryID, err := strconv.ParseInt(r.PathValue("repositoryID"), 10, 64)
+	if err != nil || repositoryID < 1 {
+		clientError(w, http.StatusBadRequest, "invalid repository ID")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var repo repository
+
+	query := `
+		SELECT
+			id,
+			project_id,
+			provider,
+			name,
+			clone_url,
+			default_branch,
+			created_at,
+			updated_at
+		FROM repositories
+		WHERE id = $1 AND project_id = $2;
+	`
+
+	err = app.db.QueryRowContext(
+		ctx,
+		query,
+		repositoryID,
+		projectID,
+	).Scan(
+		&repo.ID,
+		&repo.ProjectID,
+		&repo.Provider,
+		&repo.Name,
+		&repo.CloneURL,
+		&repo.DefaultBranch,
+		&repo.CreatedAt,
+		&repo.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		clientError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(repo); err != nil {
+		log.Printf("JSON encoding error: %v", err)
+		return
 	}
 }
